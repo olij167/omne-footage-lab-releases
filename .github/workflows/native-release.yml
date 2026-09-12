@@ -26,8 +26,8 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - id: version
@@ -57,8 +57,8 @@ jobs:
       WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
       WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - name: Install FFmpeg + Inno Setup
@@ -81,7 +81,7 @@ jobs:
         shell: pwsh
         run: ./build_windows.ps1
       - name: Upload Windows build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: native-windows-x64
           if-no-files-found: error
@@ -112,8 +112,8 @@ jobs:
       MACOS_APP_IDENTITY: ${{ secrets.MACOS_APPLICATION_IDENTITY }}
       MACOS_INSTALLER_IDENTITY: ${{ secrets.MACOS_INSTALLER_IDENTITY }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - name: Install FFmpeg
@@ -142,7 +142,7 @@ jobs:
           OMNE_APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: ./build_macos.sh
       - name: Upload macOS build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: native-macos-${{ matrix.arch }}
           if-no-files-found: error
@@ -157,31 +157,98 @@ jobs:
     needs: [validate, windows-x64, macos]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           pattern: native-*
           path: release-assets
           merge-multiple: true
-      - name: Refuse release overwrite
+      - name: Validate and normalize release assets
         env:
-          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.validate.outputs.version }}
         shell: bash
         run: |
           set -euo pipefail
-          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "GitHub Release v$VERSION already exists. Versions are immutable." >&2
+
+          # Validate every checksum against the adjacent downloaded artifact.
+          # Older macOS builds wrote an absolute CI path into .sha256; the hash
+          # itself is still authoritative, so normalize the filename here.
+          CHECK_COUNT=0
+          while IFS= read -r -d '' SUM; do
+            ASSET="${SUM%.sha256}"
+            [[ -f "$ASSET" ]] || {
+              echo "Checksum companion has no adjacent artifact: $SUM" >&2
+              exit 2
+            }
+            EXPECTED="$(awk 'NR==1 {print tolower($1)}' "$SUM")"
+            ACTUAL="$(sha256sum "$ASSET" | awk '{print $1}')"
+            [[ "$EXPECTED" == "$ACTUAL" ]] || {
+              echo "SHA-256 mismatch: $ASSET" >&2
+              exit 2
+            }
+            printf '%s  %s\n' "$ACTUAL" "$(basename "$ASSET")" > "$SUM"
+            CHECK_COUNT=$((CHECK_COUNT + 1))
+          done < <(find release-assets -type f -name '*.sha256' -print0)
+
+          [[ "$CHECK_COUNT" -eq 6 ]] || {
+            echo "Expected 6 checksum companions, found $CHECK_COUNT" >&2
             exit 2
-          fi
-      - name: Create public native release
+          }
+
+          echo "Validated and normalized $CHECK_COUNT checksum companions."
+          find release-assets -type f -printf '%P\n' | sort
+
+      - name: Create or resume draft native release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.validate.outputs.version }}
         shell: bash
         run: |
           set -euo pipefail
-          find release-assets -maxdepth 1 -type f -printf '%f\n' | sort
-          gh release create "v$VERSION" release-assets/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "OmN-e Footage Lab v$VERSION — native desktop builds" \
-            --notes "Native Windows and macOS builds for OmN-e Footage Lab v$VERSION. The canonical download page and update authority remain on https://omne.space/downloads/footage-lab/."
+
+          EXISTING="$(
+            gh release view "v$VERSION"               --repo "$GITHUB_REPOSITORY"               --json isDraft               --jq '.isDraft' 2>/dev/null || true
+          )"
+
+          if [[ "$EXISTING" == "false" ]]; then
+            echo "Published GitHub Release v$VERSION already exists. Versions are immutable." >&2
+            exit 2
+          elif [[ "$EXISTING" == "true" ]]; then
+            echo "Resuming existing draft GitHub Release v$VERSION."
+          else
+            gh release create "v$VERSION"               --repo "$GITHUB_REPOSITORY"               --draft               --target "$GITHUB_SHA"               --title "OmN-e Footage Lab v$VERSION — native desktop builds"               --notes "Native Windows and macOS builds for OmN-e Footage Lab v$VERSION. The canonical download page and update authority remain on https://omne.space/downloads/footage-lab/."
+          fi
+
+      - name: Upload only files to draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -d '' RELEASE_FILES < <(find release-assets -type f -print0)
+          [[ "${#RELEASE_FILES[@]}" -eq 12 ]] || {
+            echo "Expected 12 release files, found ${#RELEASE_FILES[@]}" >&2
+            printf '  %s\n' "${RELEASE_FILES[@]}" >&2
+            exit 2
+          }
+
+          gh release upload "v$VERSION"             --repo "$GITHUB_REPOSITORY"             --clobber             "${RELEASE_FILES[@]}"
+
+          ACTUAL_COUNT="$(
+            gh release view "v$VERSION"               --repo "$GITHUB_REPOSITORY"               --json assets               --jq '.assets | length'
+          )"
+          [[ "$ACTUAL_COUNT" -eq 12 ]] || {
+            echo "Release asset verification failed: expected 12, found $ACTUAL_COUNT" >&2
+            exit 2
+          }
+
+      - name: Publish verified draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release edit "v$VERSION"             --repo "$GITHUB_REPOSITORY"             --draft=false
+          echo "Published immutable native release v$VERSION with 12 verified assets."

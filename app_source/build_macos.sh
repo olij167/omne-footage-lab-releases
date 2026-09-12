@@ -118,7 +118,11 @@ if [[ -n "${OMNE_APPLE_ID:-}" && -n "${OMNE_APPLE_TEAM_ID:-}" && -n "${OMNE_APPL
 fi
 
 for artifact in "$PKG_FINAL" "$DMG_FINAL"; do
-  shasum -a 256 "$artifact" > "${artifact}.sha256"
+  (
+    cd "$(dirname "$artifact")"
+    NAME="$(basename "$artifact")"
+    shasum -a 256 "$NAME" > "${NAME}.sha256"
+  )
 done
 
 # Smoke-test bundle metadata and code signature. Ad-hoc signing is acceptable for
