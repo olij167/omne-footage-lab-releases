@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "files": [
+    "IOS_PORT_NOTES.md",
+    "NATIVE_RELEASE_GUIDE.md",
+    "PILLOW_COMPAT_QA_REPORT.txt",
+    "QA_REPORT.txt",
+    "README.txt",
+    "RELEASE_GUIDE.md",
+    "SYSTEM_REQUIREMENTS.md",
+    "THIRD_PARTY_NOTICES.txt",
+    "build_macos.sh",
+    "build_windows.ps1",
+    "install.sh",
+    "macos_entitlements.plist",
+    "omne_footage_lab.py",
+    "release_files.json",
+    "ui_profile.json",
+    "uninstall.sh",
+    "windows_installer.iss"
+  ]
+}

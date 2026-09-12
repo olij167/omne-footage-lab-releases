@@ -1,0 +1,18 @@
+OmN-e Footage Lab — Third-party component notice
+================================================
+
+OmN-e Footage Lab desktop packages may bundle FFmpeg and FFprobe so the user
+does not need to install them separately. FFmpeg is a separate open-source
+project and is distributed under its own licence terms. The exact licence can
+depend on how the supplied FFmpeg binary was built.
+
+Official FFmpeg project and licensing information:
+  https://ffmpeg.org/
+  https://ffmpeg.org/legal.html
+
+Release builders are responsible for retaining the licence/notices associated
+with the exact FFmpeg distribution included in a Windows or macOS package.
+
+Python, Tcl/Tk, Pillow, PyInstaller, and other bundled runtime components remain
+subject to their respective licences. This notice is informational and does not
+replace any licence file required by a binary distributor.

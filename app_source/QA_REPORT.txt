@@ -1,0 +1,76 @@
+OmN-e Footage Lab v0.3.2 — INTERACTION / LOW-SPEC / OWNER PARITY QA
+=====================================================================
+
+Scope
+-----
+This is a compatibility and interaction refinement of the v0.3.1 cross-platform
+source. It does not change the accepted conversion/glitch model.
+
+Verified locally on Linux
+-------------------------
+PASS Python syntax:
+     - app_source/omne_footage_lab.py
+     - owner/omne_footage_lab_customizer.py
+     - owner/publisher.py
+     - owner/sync_native_release.py
+
+PASS shell syntax:
+     - install_owner.sh
+     - app_source/install.sh / uninstall.sh / build_macos.sh
+     - native_build_repo/bootstrap_github_repo.sh
+
+PASS public/owner Theme Studio parity:
+     - 31/31 semantic colour controls exposed in both
+     - 17/17 numeric sizing/density controls exposed in both
+     - 2/2 font-family controls exposed in both
+     Previously owner Chrome Studio omitted field/active/selection/disabled text,
+     scrollbar/slider colours, preview text, mono size, tooltip sizing/wrapping,
+     and handle offset. Those omissions are resolved.
+
+PASS pointer-aware wheel routing under Xvfb:
+     - wheel over a normal entry scrolls its enclosing vertical panel
+     - Shift+wheel over a long single-line entry pans that field horizontally
+     - wheel over an overflowing Text field scrolls that Text field itself
+     - scales/spinboxes/comboboxes are intercepted before native wheel value
+       changes can occur when the intent is panel scrolling
+     - later-created User Theme Studio widgets are registered with the router
+
+PASS public app and owner Customiser both construct under a virtual Linux display.
+
+PASS media regression:
+     - lossless mode produced a byte-identical copy of the 2,283,465-byte
+       Sanyo-derived test clip
+     - 2-second 426x240 / 12 fps Manual preview completed
+     - 16 display frames were generated
+
+PASS Pillow compatibility retained:
+     modern Image.Resampling path remains feature-detected; older Pillow fallback
+     remains in place.
+
+PASS native-repository bootstrap dry simulation:
+     - clean git repository initialized
+     - local git identity fallback applied
+     - release version read dynamically as 0.3.2
+     - GitHub create path reached successfully using a mocked gh client
+     - rerunnable script now handles an already-existing repository path too
+
+PASS documentation / diagnostics:
+     - SYSTEM_REQUIREMENTS.md added to public allow-list and native packages
+     - Diagnostics identifies the CPU/FFmpeg processing engine
+     - no discrete GPU is required or used by the default pipeline
+
+Hardware posture
+----------------
+The current pipeline is CPU-first. Integrated graphics are sufficient for the UI.
+Lossless stream-copy is lightweight; H.264 filters and especially minterpolate are
+CPU-heavy and may run slower than real time on old/low-power processors.
+
+Not claimed in this environment
+-------------------------------
+- Real Windows executable execution.
+- Real macOS package execution.
+- Code-signing / Apple notarization.
+- Live GitHub Actions native build for v0.3.2.
+- Live Cloudflare publication of v0.3.2.
+
+Those gates should occur before publishing a cross-platform v0.3.2 manifest.

@@ -1,0 +1,43 @@
+OmN-e Footage Lab v0.3.1 — PILLOW COMPATIBILITY HOTFIX QA
+============================================================
+
+Issue reproduced from field report
+----------------------------------
+An older Linux Pillow installation can raise:
+  AttributeError: module 'PIL.Image' has no attribute 'Resampling'
+
+Cause
+-----
+Image.Resampling was introduced by Pillow 9.1.0. The v0.3.0 preview scaler
+referenced Image.Resampling.BILINEAR directly, so a machine with an older
+distro Pillow package could crash while resizing the preview.
+
+Fix
+---
+- Modern Pillow: uses Image.Resampling.BILINEAR.
+- Older Pillow: feature-detects the missing enum and uses the equivalent
+  Image.BILINEAR constant only on that old installation.
+- Preview fitting now uses Image.thumbnail() on a copy of the frame, avoiding
+  a dependency on newer ImageOps.contain behaviour while preserving aspect.
+- Native Windows/macOS builds pin Pillow >=11,<13 under Python 3.13.
+- Diagnostics now report the Pillow version and selected resampling API.
+
+Validation
+----------
+PASS Python compilation for owner app source.
+PASS Python compilation for native-build app source.
+PASS No direct Image.Resampling references remain in preview rendering.
+PASS Current Pillow selects the modern Resampling.BILINEAR path.
+PASS Simulated old Pillow object without Resampling selects legacy BILINEAR.
+PASS Preview thumbnail smoke test preserves whole-frame aspect ratio.
+PASS Windows PowerShell build script pins modern Pillow.
+PASS macOS build script pins modern Pillow.
+PASS Native workflow default version updated to 0.3.1.
+PASS Public release allow-list remains explicit.
+
+No Cloudflare or GitHub Release publication was performed from this QA environment.
+
+
+v0.3.2 retention note
+---------------------
+The feature-detected modern/legacy Pillow resampling compatibility from v0.3.1 is retained unchanged in v0.3.2.
