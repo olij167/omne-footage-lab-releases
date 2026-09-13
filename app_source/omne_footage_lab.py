@@ -343,10 +343,19 @@ class AdvancedColorPicker(tk.Toplevel):
         return widget
     @classmethod
     def choose(cls,parent,initial="#FFFFFF",title="Choose colour"):
-        dlg=cls(parent,initial,title);parent.wait_window(dlg);result=dlg.result
+        previous_grab=None;previous_grab_status=None
         try:
-            if parent.winfo_exists():parent.grab_set()
-        except Exception:pass
+            previous_grab=parent.grab_current()
+            if previous_grab is not None:previous_grab_status=previous_grab.grab_status()
+        except Exception:
+            previous_grab=None;previous_grab_status=None
+        dlg=cls(parent,initial,title);parent.wait_window(dlg);result=dlg.result
+        if previous_grab is not None:
+            try:
+                if previous_grab.winfo_exists():
+                    if previous_grab_status=="global":previous_grab.grab_set_global()
+                    else:previous_grab.grab_set()
+            except Exception:pass
         return result
     def _spin_row(self,parent,row,key,default,var,a,b,inc,callback):
         lab=ttk.Label(parent,text=self._label(key,default));lab.grid(row=row,column=0,sticky="w",pady=2);self._tip(lab,"color_picker")
