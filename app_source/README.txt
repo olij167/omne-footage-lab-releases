@@ -1,4 +1,4 @@
-OmN-e Footage Lab 0.3.2 — cross-platform desktop application
+OmN-e Retrospector 0.4.0 — cross-platform desktop application
 ================================================================
 
 Local video clipping and restrained glitch-art conversion using Python/Tk and
@@ -38,22 +38,31 @@ Interaction model
   passes over them.
 - Compact input regions are collapsible and reflow rather than exposing
   horizontal scrollbars.
-- The preview never scrolls and always contains the complete frame.
+- The preview defaults to Fit-to-cell without cropping. Fit may enlarge the decoded proxy for readability without changing media resolution; 100%, zoom and drag-to-pan are available directly above/on the preview.
 
 Themes
 ------
-Published themes are selected from Welcome. Users can open Customize… for the
-same complete chrome parameter set available to the owner: semantic colours,
-fonts, sizing/density, tooltip styling, scrollbars, sliders, status colours and
-preview chrome. Personal themes stay local to that device.
+Published themes are selected from Welcome. The approved built-ins are Pungent Funk, Space Funk, Smitzu Funk, LindZ Funk, Beth Funk and Mik Funk. Users can Import safe local Base16/Base24, VS Code, TextMate or GIMP palette files, preview the semantic mapping reversibly, save locally, customize, and export native `.omne-theme.json` files. No theme import downloads code, fonts or remote assets.
 
-Linux/source install
---------------------
-On Ubuntu/Zorin:
+Linux install
+-------------
+For the normal Ubuntu/Zorin installation, download the `.deb` from the OmN-e
+download page and open it in the desktop Software installer. No README or
+terminal commands are required for the normal path. Retrospector appears in the
+application menu after installation.
+
+The source ZIP remains available for compatibility, recovery and advanced/manual
+installation. Its technical data/launcher paths remain `omne-footage-lab` so
+existing preferences, presets and updater history survive the product rebrand.
+
+Advanced source install on Ubuntu/Zorin:
 
   sudo apt install -y python3-tk ffmpeg python3-pil.imagetk
   sha256sum -c SHA256SUMS
   bash install.sh
+  ~/.local/bin/omne-retrospector
+
+Legacy compatibility alias (still supported):
   ~/.local/bin/omne-footage-lab
 
 Pillow provides smooth preview resizing. Older distro Pillow releases are
@@ -79,7 +88,7 @@ Worker from allow-listed immutable GitHub Release assets.
 
 Privacy / ownership
 -------------------
-Footage Lab is local-first. It does not upload source footage. The public package
+Retrospector is local-first. It does not upload source footage. The public package
 does not contain the owner Customiser, publishing credentials, owner logs,
 personal conversion presets or source footage.
 

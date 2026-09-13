@@ -9,8 +9,15 @@ import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import colorchooser, filedialog, messagebox, simpledialog, ttk
 
-APP = "OmN-e Footage Lab"
-VERSION="0.3.2"
+from builtin_themes import BUILTIN_THEMES, DEFAULT_THEME_NAME, PUBLISHED_THEME_ORDER, THEME_ALIASES
+from preview_view import clamp_zoom, compute_preview_transform
+from theme_interchange import ThemeImportError, export_native_theme, import_theme_file
+from theme_color_math import relative_luminance
+
+APP = "OmN-e Retrospector"
+VERSION="0.4.0"
+TECHNICAL_APP_ID = "omne-footage-lab"
+LEGACY_DATA_NAME = "OmN-e Footage Lab"
 WEBSITE_URL = "https://omne.space/"
 SUPPORT_URL = "https://omne.space/support"
 UPDATE_MANIFEST_URL = "https://omne.space/downloads/footage-lab/update.json"
@@ -43,6 +50,7 @@ DEFAULT_LABELS = {
     "visit_site": "Visit omne.space", "support": "Support / Donate", "updates": "Updates", "check_now": "Check Now",
     "download_install": "Download & Install", "check_updates_startup": "Check for updates whenever the app opens",
     "theme": "Theme", "theme_help": "Choose a published or locally saved interface theme.", "customize_theme": "Customize…",
+    "import_theme": "Import…", "export_theme": "Export…", "preview_fit": "Fit", "preview_actual": "100%", "preview_zoom_out": "−", "preview_zoom_in": "+",
     "quick_use_title": "Quick Use",
     "quick_use_body": "1. Choose folders + Scan.\n2. Pick Lossless or Glitch.\n3. Preview/tune one clip.\n4. Apply Selected or Folder.",
     "enable_tooltips": "Enable explanatory tooltips",
@@ -86,6 +94,12 @@ DEFAULT_TOOLTIPS = {
     "apply_selected": "Queue only the clip currently selected in Preview. Use this to validate a recipe before processing the full camera folder.",
     "reset_defaults": "Restore application folders and Inspector values to factory defaults. Custom presets, converted media, logs and job history are kept.",
     "preview": "Render a short proxy from the selected source using the current glitch recipe. This is for visual tuning; final output uses the Inspector format settings.",
+    "import_theme": "Import a native OmN-e theme or safely map a supported Base16/Base24, VS Code, TextMate, or GIMP palette into Retrospector chrome. Imports stay local.",
+    "export_theme": "Export the current semantic chrome as a portable .omne-theme.json file.",
+    "preview_fit": "Scale the preview to fill as much of the preview cell as possible without cropping. Display scaling never changes the media file.",
+    "preview_actual": "Show the decoded preview proxy at one display pixel per preview pixel.",
+    "preview_zoom_out": "Zoom the preview out around the centre. Drag the image to pan when it is larger than the preview cell.",
+    "preview_zoom_in": "Zoom the preview in around the centre. Drag the image to pan when it is larger than the preview cell.",
     "source": "Select which scanned camera clip is used for Preview or Apply Selected.",
     "render_preview": "Render the chosen time range through the current glitch recipe and display it here. Preview is intentionally reduced for responsiveness.",
     "cancel_preview": "Stop the active preview FFmpeg process without affecting queued/full conversions.",
@@ -109,8 +123,8 @@ DEFAULT_TOOLTIPS = {
     "enable_tooltips": "Show concise utility help when hovering interface controls. Turn this off if you already know the workflow and prefer a quieter interface.",
     "quick_use": "Four-step reminder of the normal workflow. The owner can edit this wording in the Labels section of the Customiser.",
     "customize_theme": "Open the live Theme Studio. Every colour and sizing adjustment is applied to the running interface immediately; save the result as a local theme when you want to keep it.",
-    "show_welcome": "Show the compact website/support/update panel whenever Footage Lab starts.",
-    "continue": "Close the welcome/update panel and return to Footage Lab.",
+    "show_welcome": "Show the compact website/support/update panel whenever Retrospector starts.",
+    "continue": "Close the welcome/update panel and return to Retrospector.",
     "resize_outer": "Drag the visible horizontal handle to rebalance Source/Output, Workspace and Processes. The handle is constrained so fixed-height toolbars cannot be stretched into empty space.",
     "resize_workspace": "Drag the vertical handle to give more width to Inspector or Preview. Minimum widths keep both sides usable.",
     "resize_inspector": "Drag the horizontal handle to rebalance the operation summary and Inspector controls. The summary region is capped near its actual content height.",
@@ -429,18 +443,18 @@ def find_tool(name):
 def user_config_dir():
     if os.environ.get("OMNE_FOOTAGE_LAB_SANDBOX"):return Path(os.environ["OMNE_FOOTAGE_LAB_SANDBOX"])/"config"
     if os.name=="nt":
-        return Path(os.environ.get("APPDATA", Path.home()/"AppData"/"Roaming"))/"OmN-e Footage Lab"
+        return Path(os.environ.get("APPDATA", Path.home()/"AppData"/"Roaming"))/LEGACY_DATA_NAME
     if sys.platform=="darwin":
-        return Path.home()/"Library"/"Application Support"/"OmN-e Footage Lab"
-    return Path(os.environ.get("XDG_CONFIG_HOME",Path.home()/".config"))/"omne-footage-lab"
+        return Path.home()/"Library"/"Application Support"/LEGACY_DATA_NAME
+    return Path(os.environ.get("XDG_CONFIG_HOME",Path.home()/".config"))/TECHNICAL_APP_ID
 
 def user_state_dir():
     if os.environ.get("OMNE_FOOTAGE_LAB_SANDBOX"):return Path(os.environ["OMNE_FOOTAGE_LAB_SANDBOX"])/"state"
     if os.name=="nt":
-        return Path(os.environ.get("LOCALAPPDATA", Path.home()/"AppData"/"Local"))/"OmN-e Footage Lab"
+        return Path(os.environ.get("LOCALAPPDATA", Path.home()/"AppData"/"Local"))/LEGACY_DATA_NAME
     if sys.platform=="darwin":
-        return Path.home()/"Library"/"Logs"/"OmN-e Footage Lab"
-    return Path(os.environ.get("XDG_STATE_HOME",Path.home()/".local"/"state"))/"omne-footage-lab"
+        return Path.home()/"Library"/"Logs"/LEGACY_DATA_NAME
+    return Path(os.environ.get("XDG_STATE_HOME",Path.home()/".local"/"state"))/TECHNICAL_APP_ID
 
 def user_theme_path():
     return user_config_dir()/"user_themes.json"
@@ -488,14 +502,27 @@ def default_source_path():
 def version_key(value):
     return tuple(int(x) for x in re.findall(r"\d+",str(value))[:4]) or (0,)
 
+def native_update_platform(system_name,machine,frozen):
+    system=(system_name or "").strip().lower()
+    machine=(machine or "").strip().lower()
+    arm=machine in {"arm64","aarch64"}
+    if system=="windows":return "windows-arm64" if arm else "windows-x64"
+    if system=="darwin":return "macos-arm64" if arm else "macos-x64"
+    if system=="linux":
+        if not frozen:return "linux"
+        return "linux-arm64" if arm else "linux-x64"
+    return system or sys.platform
+
 def update_platform_key():
-    machine=(platform.machine() or "").lower()
-    if os.name=="nt":
-        return "windows-arm64" if machine in {"arm64","aarch64"} else "windows-x64"
-    if sys.platform=="darwin":
-        return "macos-arm64" if machine in {"arm64","aarch64"} else "macos-x64"
-    if sys.platform.startswith("linux"):return "linux"
-    return sys.platform
+    return native_update_platform(platform.system(),platform.machine(),bool(getattr(sys,"frozen",False)))
+
+def native_installer_kind_supported(kind,system_name):
+    system=(system_name or "").strip().lower()
+    kind=(kind or "").strip().lower()
+    if system=="windows":return kind in {"installer","exe","msi"}
+    if system=="darwin":return kind in {"pkg","dmg"}
+    if system=="linux":return kind=="deb"
+    return False
 
 def update_platform_fallback(key):
     return {
@@ -512,7 +539,7 @@ EXTS = {".mp4",".mov",".m4v",".mkv",".avi",".mts",".m2ts",".webm"}
 
 DEFAULT_UI = dict(
     source=DEFAULT_SOURCE,
-    output=DEFAULT_SOURCE+"_OMNE_FOOTAGE_LAB",
+    output=DEFAULT_SOURCE+"_OMNE_RETROSPECTOR",
     max_mib=48.0,
     mode="lossless",
     preset="Manual",
@@ -599,33 +626,60 @@ import string
 from collections import OrderedDict
 
 DEFAULT_IDENTITY = {
-    "app_name": "OmN-e Footage Lab",
+    "app_name": "OmN-e Retrospector",
     "website_url": "https://omne.space/",
     "support_url": "https://omne.space/support",
 }
-DEFAULT_CHROME.update({
-    "background": "#160F1F", "panel_bg": "#21162C", "foreground": "#EEE8F5", "muted_fg": "#A99AB7",
-    "field_bg": "#2A1B38", "field_fg": "#F4EEFA",
-    "button_bg": "#332144", "button_fg": "#F7F0FF",
-    "active_bg": "#4A2D63", "active_fg": "#FFF4C2",
-    "selection_bg": "#6F4C8E", "selection_fg": "#FFFFFF",
-    "disabled_fg": "#7E708D", "accent": "#FFD75A", "secondary_accent": "#C9A7FF",
-    "tab_bg": "#291B37", "tab_selected_bg": "#3B2850",
-    "scrollbar_bg": "#6D567E", "scrollbar_trough": "#21162C",
-    "scale_bg": "#21162C", "scale_trough": "#4A365A",
-    "preview_bg": "#0E0914", "preview_fg": "#DCCAFF",
-    "success_fg": "#6FD47A", "warning_fg": "#FFAA45", "failure_fg": "#FF4F87", "running_fg": "#C9A7FF",
-    "sash_color": "#6F577F", "panel_edge": "#4C365B",
-    "tooltip_bg": "#2A1B38", "tooltip_fg": "#F4EFFF", "tooltip_delay_ms": 360,
-    "font_family": "TkDefaultFont", "font_size": 10,
-    "heading_size": 12, "welcome_size": 18,
-    "mono_font": "TkFixedFont", "mono_size": 9,
-    "tooltip_font_size": 9, "tooltip_wrap_px": 390,
-    "button_pad_x": 8, "button_pad_y": 5, "panel_padding": 8,
-    "border_width": 1, "row_height": 25,
-    "sash_width": 7, "handle_size": 10, "handle_offset": 18,
-    "slider_length": 175, "scrollbar_width": 13,
-})
+DEFAULT_CHROME.update({'background': '#150D1A',
+ 'panel_bg': '#211329',
+ 'field_bg': '#170F1E',
+ 'foreground': '#F3E9EF',
+ 'muted_fg': '#B8A4B3',
+ 'button_bg': '#301A36',
+ 'button_fg': '#F3E9EF',
+ 'active_bg': '#4A2544',
+ 'active_fg': '#FFF4D5',
+ 'selection_bg': '#6A3256',
+ 'selection_fg': '#FFFFFF',
+ 'disabled_fg': '#A08A9D',
+ 'accent': '#D7B04C',
+ 'secondary_accent': '#F05C8A',
+ 'tab_bg': '#211329',
+ 'tab_selected_bg': '#4A2544',
+ 'scrollbar_bg': '#76506B',
+ 'scrollbar_trough': '#211329',
+ 'scale_bg': '#211329',
+ 'scale_trough': '#4A2544',
+ 'preview_bg': '#0C0710',
+ 'preview_fg': '#F0DDE9',
+ 'success_fg': '#7EBB80',
+ 'warning_fg': '#D7B04C',
+ 'failure_fg': '#F05C8A',
+ 'running_fg': '#DA89C8',
+ 'sash_color': '#6A465E',
+ 'panel_edge': '#503047',
+ 'tooltip_bg': '#301A36',
+ 'tooltip_fg': '#FFF5FA',
+ 'field_fg': '#F3E9EF',
+ 'tooltip_delay_ms': 360,
+ 'font_family': 'TkDefaultFont',
+ 'font_size': 10,
+ 'heading_size': 12,
+ 'welcome_size': 18,
+ 'mono_font': 'TkFixedFont',
+ 'mono_size': 9,
+ 'tooltip_font_size': 9,
+ 'tooltip_wrap_px': 390,
+ 'button_pad_x': 8,
+ 'button_pad_y': 5,
+ 'panel_padding': 8,
+ 'border_width': 1,
+ 'row_height': 25,
+ 'sash_width': 7,
+ 'handle_size': 10,
+ 'handle_offset': 18,
+ 'slider_length': 175,
+ 'scrollbar_width': 13})
 DEFAULT_LABELS.update({
     "browse_source": "Browse", "browse_output": "Browse",
     "app_title": "{app} {version}", "welcome_title": "{app} · Welcome",
@@ -706,7 +760,7 @@ DEFAULT_TOOLTIPS.update({
 })
 DEFAULT_MESSAGES = {'a_preview_is_already_rendering_cancel_it_or_wait_c2c6d67e': 'A preview is already rendering. Cancel it or '
                                                               'wait before rendering again.',
- 'archive_must_contain_exactly_one_footage_lab_app_c7a5e382': 'Archive must contain exactly one Footage Lab '
+ 'archive_must_contain_exactly_one_footage_lab_app_c7a5e382': 'Archive must contain exactly one Retrospector '
                                                               'application',
  'built_in_preset_names_cannot_be_overwritten_choo_177b69d9': 'Built-in preset names cannot be overwritten. '
                                                               'Choose another name.',
@@ -735,7 +789,7 @@ DEFAULT_MESSAGES = {'a_preview_is_already_rendering_cancel_it_or_wait_c2c6d67e':
  'glitch_v0_v1_v2_g_fps_crf_v3_v4_b4398fcb': 'GLITCH · {v0} · {v1} @ {v2:g} fps · CRF {v3}{v4}',
  'idle_ab0171ca': 'Idle',
  'incomplete_release_file_manifest_4acedd98': 'Incomplete release file manifest',
- 'install_footage_lab_v_v0_from_omne_space_user_se_f856d243': 'Install Footage Lab v{v0} from omne.space?\n'
+ 'install_footage_lab_v_v0_from_omne_space_user_se_f856d243': 'Install Retrospector v{v0} from omne.space?\n'
                                                               '\n'
                                                               'User settings and media are kept. The current '
                                                               'application will be backed up.',
@@ -792,7 +846,7 @@ DEFAULT_MESSAGES = {'a_preview_is_already_rendering_cancel_it_or_wait_c2c6d67e':
  'the_update_package_url_or_sha_256_checksum_is_in_5be63fc4': 'The update package URL or SHA-256 checksum is '
                                                               'invalid.',
  'the_verified_update_installer_has_been_launched__4a35074a': 'The verified update installer has been '
-                                                              'launched. Close Footage Lab when the '
+                                                              'launched. Close Retrospector when the '
                                                               'installer asks you to.',
  'this_build_requires_a_compatible_installer_asset_2da5e2c2': 'This build requires a compatible installer '
                                                               'asset',
@@ -810,7 +864,7 @@ DEFAULT_MESSAGES = {'a_preview_is_already_rendering_cancel_it_or_wait_c2c6d67e':
  'update_installation_failed_see_diagnostics_2d6081cd': 'Update installation failed · see Diagnostics',
  'update_installation_failed_v0_145a0097': 'Update installation failed:\n{v0}',
  'update_installed_successfully_restart_footage_la_c4762641': 'Update installed successfully. Restart '
-                                                              'Footage Lab now?',
+                                                              'Retrospector now?',
  'update_installer_downloaded_launching_eb146d1c': 'Update installer downloaded · launching…',
  'update_is_missing_release_files_json_237bb5d0': 'Update is missing release_files.json',
  'update_manifest_too_large_e4660666': 'Update manifest too large',
@@ -843,40 +897,35 @@ def tr(template, **values):
     except (KeyError, ValueError, IndexError, AttributeError):
         return template.format(**values) if values else template
 
-BUILTIN_THEMES = {
-    "Pungent Purple": copy.deepcopy(DEFAULT_CHROME),
-    "Midnight Syntax": {**copy.deepcopy(DEFAULT_CHROME),
-        "background":"#0D1117","panel_bg":"#161B22","foreground":"#E6EDF3","muted_fg":"#8B949E",
-        "field_bg":"#0D1117","field_fg":"#E6EDF3","button_bg":"#21262D","button_fg":"#E6EDF3",
-        "active_bg":"#30363D","active_fg":"#FFFFFF","selection_bg":"#1F6FEB","accent":"#58A6FF","secondary_accent":"#D2A8FF",
-        "tab_bg":"#161B22","tab_selected_bg":"#21262D","panel_edge":"#30363D","sash_color":"#484F58",
-        "scrollbar_bg":"#484F58","scrollbar_trough":"#161B22","scale_bg":"#161B22","scale_trough":"#30363D",
-        "preview_bg":"#010409","preview_fg":"#D2A8FF","success_fg":"#3FB950","warning_fg":"#D29922","failure_fg":"#F85149","running_fg":"#58A6FF",
-        "tooltip_bg":"#21262D","tooltip_fg":"#E6EDF3"},
-    "Lavender Haze": {**copy.deepcopy(DEFAULT_CHROME),
-        "background":"#EDE7F6","panel_bg":"#F6F0FC","foreground":"#332B3D","muted_fg":"#74677F",
-        "field_bg":"#FFFFFF","field_fg":"#332B3D","button_bg":"#DED0ED","button_fg":"#332B3D",
-        "active_bg":"#CFB7E5","active_fg":"#241B2E","selection_bg":"#8E68B2","accent":"#7652A2","secondary_accent":"#B88DDB",
-        "tab_bg":"#E3D7EF","tab_selected_bg":"#FFFFFF","panel_edge":"#C7B4D8","sash_color":"#9E83B7",
-        "scrollbar_bg":"#BCA7CD","scrollbar_trough":"#E7DDF0","scale_bg":"#F6F0FC","scale_trough":"#D2C0DF",
-        "preview_bg":"#241A2E","preview_fg":"#F0DFFF","success_fg":"#2D8A4A","warning_fg":"#C77919","failure_fg":"#C63D62","running_fg":"#7652A2",
-        "tooltip_bg":"#332B3D","tooltip_fg":"#F7F0FF"},
-    "CRT Moss": {**copy.deepcopy(DEFAULT_CHROME),
-        "background":"#0D1510","panel_bg":"#142019","foreground":"#D8E8D8","muted_fg":"#879A88",
-        "field_bg":"#0A110D","field_fg":"#D8E8D8","button_bg":"#1C2C21","button_fg":"#D8E8D8",
-        "active_bg":"#29412F","active_fg":"#FFF3B0","selection_bg":"#3A6141","accent":"#E7D45A","secondary_accent":"#8BCF8F",
-        "tab_bg":"#142019","tab_selected_bg":"#1F3125","panel_edge":"#35513B","sash_color":"#4B6A50",
-        "scrollbar_bg":"#4B6A50","scrollbar_trough":"#142019","scale_bg":"#142019","scale_trough":"#314737",
-        "preview_bg":"#050806","preview_fg":"#A8E6A3","success_fg":"#6BD66F","warning_fg":"#F2A54A","failure_fg":"#E95072","running_fg":"#A8E6A3",
-        "tooltip_bg":"#1C2C21","tooltip_fg":"#E6F3E6"},
-}
+def resolve_theme_preference(name, user_themes, published_themes):
+    """Resolve a saved theme name without stealing an exact local theme name.
+
+    Retired built-in aliases migrate only when no local theme owns that exact
+    spelling. Unknown names fall back to the approved default.
+    """
+    candidate=str(name or "")
+    if candidate in user_themes:
+        return candidate
+    if candidate in published_themes:
+        return candidate
+    migrated=THEME_ALIASES.get(candidate)
+    if migrated in published_themes:
+        return migrated
+    return DEFAULT_THEME_NAME if DEFAULT_THEME_NAME in published_themes else (published_themes[0] if published_themes else candidate)
+
+
+def normalize_loaded_preferences(data, user_themes, published_themes):
+    values=dict(data) if isinstance(data,dict) else {}
+    values["theme_name"]=resolve_theme_preference(values.get("theme_name"),user_themes,published_themes)
+    return values
+
 
 def profile_defaults():
     return {"schema": 3, "identity": copy.deepcopy(DEFAULT_IDENTITY),
-            "chrome": copy.deepcopy(DEFAULT_CHROME), "labels": copy.deepcopy(DEFAULT_LABELS),
+            "chrome": copy.deepcopy(BUILTIN_THEMES[DEFAULT_THEME_NAME]), "labels": copy.deepcopy(DEFAULT_LABELS),
             "tooltips": copy.deepcopy(DEFAULT_TOOLTIPS), "messages": copy.deepcopy(DEFAULT_MESSAGES),
             "elements": {}, "themes": copy.deepcopy(BUILTIN_THEMES),
-            "published_themes": list(BUILTIN_THEMES), "default_theme": "Pungent Purple"}
+            "published_themes": list(PUBLISHED_THEME_ORDER), "default_theme": DEFAULT_THEME_NAME}
 
 def fields_in(template):
     return {f for _, f, _, _ in string.Formatter().parse(template) if f is not None}
@@ -1009,7 +1058,7 @@ def install_wheel_router(root):
     """Route wheel gestures to the surface underneath the pointer.
 
     Tk's platform defaults are inconsistent when nested canvases, text fields,
-    scales and comboboxes are involved. Footage Lab deliberately makes wheel
+    scales and comboboxes are involved. Retrospector deliberately makes wheel
     behaviour spatial instead of focus-driven:
 
     - wheel: scroll the vertically scrollable field/area under the pointer;
@@ -1114,20 +1163,32 @@ def install_wheel_router(root):
     root._scroll_register=register
 
 class FitPreview(tk.Frame):
-    """Contains the entire frame for any aspect ratio; no internal scrolling."""
-    def __init__(self,parent,chrome):
-        self.chrome=chrome
+    """Aspect-preserving preview with Fit, 100%, zoom and bounded pan.
+
+    Scaling is display-only. The decoded preview proxy and source media remain
+    untouched, so a large preview cell can show a small proxy at a useful size
+    without changing output resolution.
+    """
+    def __init__(self,parent,chrome,on_view_change=None):
+        self.chrome=chrome; self.on_view_change=on_view_change
         super().__init__(parent,bg=chrome["preview_bg"],highlightthickness=chrome["border_width"],
                          highlightbackground=chrome["panel_edge"],width=240,height=135)
         self.pack_propagate(False); self.grid_propagate(False)
-        self.canvas=tk.Canvas(self,bg=chrome["preview_bg"],highlightthickness=0,width=1,height=1)
+        self.canvas=tk.Canvas(self,bg=chrome["preview_bg"],highlightthickness=0,width=1,height=1,cursor="arrow")
         self.canvas.pack(fill="both",expand=True)
         self.item=self.canvas.create_image(0,0,anchor="center")
         self.caption=self.canvas.create_text(0,0,fill=chrome["preview_fg"],
                           font=(chrome["font_family"],chrome["font_size"]),justify="center")
         self.raw=None; self.path=None; self.photo=None; self.after_resize=None
         self.cache=OrderedDict(); self.display_size=(0,0)
+        self.view_mode="fit"; self.zoom=1.0; self.pan=(0,0); self.current_scale=1.0; self._drag=None
         self.canvas.bind("<Configure>",self.schedule,add="+")
+        self.canvas.bind("<ButtonPress-1>",self._begin_pan,add="+")
+        self.canvas.bind("<B1-Motion>",self._drag_pan,add="+")
+        self.canvas.bind("<ButtonRelease-1>",self._end_pan,add="+")
+        self.canvas.bind("<Control-MouseWheel>",self._wheel_zoom,add="+")
+        self.canvas.bind("<Control-Button-4>",lambda _e:self.zoom_in(),add="+")
+        self.canvas.bind("<Control-Button-5>",lambda _e:self.zoom_out(),add="+")
     def set_chrome(self,chrome):
         self.chrome=chrome
         self.configure(bg=chrome["preview_bg"],highlightthickness=chrome["border_width"],highlightbackground=chrome["panel_edge"])
@@ -1140,7 +1201,7 @@ class FitPreview(tk.Frame):
         if "image" in kw:
             value=kw.pop("image")
             if not value:
-                self.raw=None; self.photo=None; self.path=None
+                self.raw=None; self.photo=None; self.path=None; self.pan=(0,0)
                 self.canvas.itemconfigure(self.item,image="")
         if cnf or kw:super().configure(cnf,**kw)
     config=configure
@@ -1155,40 +1216,79 @@ class FitPreview(tk.Frame):
             if Image:
                 with Image.open(path) as im:self.cache[path]=im.convert("RGB")
             else:self.cache[path]=tk.PhotoImage(master=self,file=path)
-            # Small proxy cache, capped at four decoded frames.
             while len(self.cache)>4:self.cache.popitem(last=False)
         self.raw=self.cache[path]; self.cache.move_to_end(path); self.path=path
         self.canvas.itemconfigure(self.caption,text="")
         self.repaint()
+    def _source_size(self):
+        if self.raw is None:return (1,1)
+        if Image and isinstance(self.raw,Image.Image):return self.raw.size
+        return (self.raw.width(),self.raw.height())
+    def _viewport_size(self):
+        return (max(1,self.canvas.winfo_width()-4),max(1,self.canvas.winfo_height()-4))
+    def _fit_scale(self):
+        sw,sh=self._source_size(); vw,vh=self._viewport_size(); return min(vw/max(sw,1),vh/max(sh,1))
+    def set_view(self,mode):
+        if mode not in {"fit","actual"}:return
+        self.view_mode=mode; self.zoom=1.0; self.pan=(0,0); self.repaint()
+    def fit(self):self.set_view("fit")
+    def actual(self):self.set_view("actual")
+    def _zoom_from_current(self,multiplier):
+        fit=max(self._fit_scale(),1e-9)
+        if self.view_mode=="fit":factor=1.0
+        elif self.view_mode=="actual":factor=1.0/fit
+        else:factor=self.zoom
+        self.view_mode="zoom"; self.zoom=clamp_zoom(factor*multiplier); self.repaint()
+    def zoom_in(self):self._zoom_from_current(1.25)
+    def zoom_out(self):self._zoom_from_current(0.8)
+    def view_description(self):
+        if self.view_mode=="fit":return f"Fit · {self.current_scale*100:.0f}%"
+        if self.view_mode=="actual":return "100%"
+        return f"{self.current_scale*100:.0f}%"
+    def _notify_view(self):
+        if self.on_view_change:
+            try:self.on_view_change(self.view_description())
+            except Exception:pass
+    def _begin_pan(self,event):
+        vw,vh=self._viewport_size(); dw,dh=self.display_size
+        if dw<=vw and dh<=vh:return
+        self._drag=(event.x,event.y,self.pan[0],self.pan[1]); self.canvas.configure(cursor="fleur"); return "break"
+    def _drag_pan(self,event):
+        if not self._drag:return
+        x,y,px,py=self._drag; self.pan=(px+(event.x-x),py+(event.y-y)); self.repaint(); return "break"
+    def _end_pan(self,event):
+        if self._drag:self._drag=None; self.canvas.configure(cursor="arrow"); return "break"
+    def _wheel_zoom(self,event):
+        if getattr(event,"delta",0)>0:self.zoom_in()
+        else:self.zoom_out()
+        return "break"
     def repaint(self):
         self.after_resize=None
         if not self.winfo_exists():return
-        w=max(1,self.canvas.winfo_width()-4); h=max(1,self.canvas.winfo_height()-4)
-        cx=self.canvas.winfo_width()/2; cy=self.canvas.winfo_height()/2
-        self.canvas.coords(self.item,cx,cy); self.canvas.coords(self.caption,cx,cy)
-        # Only the empty/error caption may wrap; it is not a control label.
-        self.canvas.itemconfigure(self.caption,width=max(1,w-8))
-        if self.raw is None:return
+        w,h=self._viewport_size(); cx=self.canvas.winfo_width()/2; cy=self.canvas.winfo_height()/2
+        self.canvas.coords(self.caption,cx,cy); self.canvas.itemconfigure(self.caption,width=max(1,w-8))
+        if self.raw is None:
+            self.display_size=(0,0); self.current_scale=1.0; self.canvas.coords(self.item,cx,cy); self._notify_view(); return
+        transform=compute_preview_transform(self._source_size(),(w,h),mode=self.view_mode,zoom=self.zoom,pan=self.pan)
+        self.pan=transform.offset; self.display_size=transform.display_size; self.current_scale=transform.scale
+        self.canvas.coords(self.item,cx+self.pan[0],cy+self.pan[1])
         if Image and isinstance(self.raw,Image.Image):
-            scaled=self.raw.copy()
-            # thumbnail() is available across the older Pillow versions found in
-            # distro repositories and preserves whole-frame aspect ratio.
-            scaled.thumbnail((w,h),resample=_PIL_BILINEAR)
+            target=transform.display_size
+            scaled=self.raw if target==self.raw.size else self.raw.resize(target,resample=_PIL_BILINEAR)
             self.photo=ImageTk.PhotoImage(scaled,master=self)
-            self.display_size=scaled.size
         else:
-            factor=max(1,math.ceil(max(self.raw.width()/w,self.raw.height()/h)))
-            self.photo=self.raw.subsample(factor,factor)
+            if transform.scale>=1:
+                factor=max(1,int(round(transform.scale))); self.photo=self.raw.zoom(factor,factor)
+            else:
+                factor=max(1,math.ceil(1/max(transform.scale,1e-9))); self.photo=self.raw.subsample(factor,factor)
             self.display_size=(self.photo.width(),self.photo.height())
-        self.canvas.itemconfigure(self.item,image=self.photo)
-
-
+        self.canvas.itemconfigure(self.item,image=self.photo); self._notify_view()
     def destroy(self):
         if self.after_resize:
             try:self.after_cancel(self.after_resize)
             except tk.TclError:pass
-        self.cache.clear()
-        super().destroy()
+        self.cache.clear(); super().destroy()
+
 
 def configure_theme(root, chrome):
     """Apply the semantic chrome palette to all ttk classes.
@@ -1279,6 +1379,56 @@ for _key,_label in _THEME_LABELS.items():
     DEFAULT_LABELS.setdefault("theme_label."+_key,_label)
 
 
+class ThemeImportDialog(tk.Toplevel):
+    """Reversible import preview for safe external/native theme mapping."""
+    def __init__(self,app,imported,source_path):
+        super().__init__(app); self.app=app; self.imported=imported; self.source_path=Path(source_path); self._keep=False
+        self.previous_name=app.theme_name.get(); self.previous_chrome=copy.deepcopy(app.ui_chrome)
+        self.title(app.t("theme_import_title","Import Theme")); self.transient(app); self.resizable(True,False); self.minsize(560,320)
+        self.protocol("WM_DELETE_WINDOW",self.cancel); self.bind("<Escape>",lambda _e:self.cancel())
+        body=ttk.Frame(self,padding=14); body.pack(fill="both",expand=True); body.columnconfigure(0,weight=1)
+        ttk.Label(body,text=imported.name,style="Title.TLabel").grid(row=0,column=0,sticky="w")
+        meta=app.t("theme_import_meta","{format} · {appearance} · {file}").format(format=imported.source_format,appearance=imported.appearance,file=self.source_path.name)
+        ttk.Label(body,text=meta,style="Muted.TLabel").grid(row=1,column=0,sticky="w",pady=(2,8))
+        min_contrast=min(imported.contrast.values()) if imported.contrast else 0.0
+        ttk.Label(body,text=app.t("theme_import_previewing","Previewing mapped semantic chrome now. Minimum mapped contrast: {ratio:.2f}:1").format(ratio=min_contrast),justify="left").grid(row=2,column=0,sticky="ew",pady=(0,8))
+        diag=ttk.LabelFrame(body,text=app.t("theme_import_diagnostics","Mapping / validation"),padding=8); diag.grid(row=3,column=0,sticky="ew")
+        rows=list(imported.diagnostics) or [type("D",(),{"severity":"info","message":app.t("theme_import_clean","No mapping warnings.")})()]
+        for i,item in enumerate(rows):
+            ttk.Label(diag,text=f"{str(item.severity).upper()} · {item.message}",justify="left",wraplength=620).grid(row=i,column=0,sticky="ew",pady=2)
+        actions=ttk.Frame(body); actions.grid(row=4,column=0,sticky="ew",pady=(12,0)); actions.columnconfigure(0,weight=1)
+        ttk.Button(actions,text=app.t("theme_import_temporary","Use Temporarily"),command=self.use_temporarily).pack(side="left")
+        ttk.Button(actions,text=app.t("theme_import_save","Save as Local Theme…"),command=self.save_local).pack(side="left",padx=5)
+        ttk.Button(actions,text=app.t("theme_import_customize","Customize…"),command=self.customize).pack(side="left")
+        ttk.Button(actions,text=app.t("cancel","Cancel"),command=self.cancel).pack(side="right")
+        app.apply_theme(imported.name,save=False,chrome_override=imported.chrome)
+        self.grab_set(); self.update_idletasks(); self.geometry(f"{max(620,self.winfo_reqwidth())}x{max(340,self.winfo_reqheight())}")
+    def _temporary_name(self):
+        name=self.imported.name.strip() or self.source_path.stem
+        if name not in self.app.theme_library:return name
+        return name+" · Imported"
+    def use_temporarily(self):
+        name=self._temporary_name(); self.app.theme_library[name]=copy.deepcopy(self.imported.chrome); self.app.refresh_theme_choices(); self.app.theme_name.set(name); self._keep=True; self._close()
+    def save_local(self):
+        proposed=self.imported.name.strip() or self.source_path.stem
+        name=simpledialog.askstring(APP,self.app.t("theme_name_prompt","Theme name:"),initialvalue=proposed,parent=self)
+        if not name or not name.strip():return
+        name=name.strip()
+        if name in self.app.user_themes:
+            if not messagebox.askyesno(APP,self.app.t("theme_override_local","A personal theme with this name already exists. Replace it?"),parent=self):return
+        elif name in self.app.published_themes:
+            if not messagebox.askyesno(APP,self.app.t("theme_override_builtin","That is an approved built-in theme. Save a local theme with the same name and override it only on this computer?"),parent=self):return
+        chrome=copy.deepcopy(self.imported.chrome); self.app.user_themes[name]=chrome; save_user_themes(self.app.user_themes); self.app.theme_library[name]=copy.deepcopy(chrome)
+        self.app.refresh_theme_choices(); self.app.theme_name.set(name); self.app.apply_theme(name,save=True); self._keep=True; self._close()
+    def customize(self):
+        name=self._temporary_name(); self.app.theme_library[name]=copy.deepcopy(self.imported.chrome); self.app.refresh_theme_choices(); self.app.theme_name.set(name); self._keep=True; self._close(); UserThemeStudio(self.app)
+    def cancel(self):self._close()
+    def _close(self):
+        if not self._keep:self.app.theme_name.set(self.previous_name); self.app.apply_theme(self.previous_name,save=False,chrome_override=self.previous_chrome)
+        try:self.grab_release()
+        except tk.TclError:pass
+        self.destroy()
+
 class UserThemeStudio(tk.Toplevel):
     """Compact live theme editor for public users.
 
@@ -1308,7 +1458,8 @@ class UserThemeStudio(tk.Toplevel):
         self.base=tk.StringVar(value=self.base_name)
         self.combo=app.add_tip(ttk.Combobox(top,textvariable=self.base,values=app.available_themes,state="readonly"),"theme_studio_theme");self.combo.grid(row=0,column=1,sticky="ew",padx=6);self.combo.bind("<<ComboboxSelected>>",lambda e:self.load_base())
         save_btn=app.add_tip(ttk.Button(top,text=app.t("theme_studio_save","Save as New Theme…"),command=self.save_as),"theme_studio_save");save_btn.grid(row=0,column=2,padx=(0,4))
-        rev_btn=app.add_tip(ttk.Button(top,text=app.t("theme_studio_revert","Revert"),command=self.revert),"theme_studio_revert");rev_btn.grid(row=0,column=3)
+        export_btn=app.add_tip(ttk.Button(top,text=app.t("export_theme","Export…"),command=self.export_current),"export_theme");export_btn.grid(row=0,column=3,padx=(0,4))
+        rev_btn=app.add_tip(ttk.Button(top,text=app.t("theme_studio_revert","Revert"),command=self.revert),"theme_studio_revert");rev_btn.grid(row=0,column=4)
 
         holder=ttk.Frame(outer);holder.pack(fill="both",expand=True);holder.rowconfigure(0,weight=1);holder.columnconfigure(0,weight=1)
         self.canvas=tk.Canvas(holder,highlightthickness=0,background=app.ui_chrome["background"]);self.canvas.grid(row=0,column=0,sticky="nsew")
@@ -1395,6 +1546,18 @@ class UserThemeStudio(tk.Toplevel):
             if not messagebox.askyesno(APP,self.app.t("theme_override_local","A personal theme with this name already exists. Replace it?"),parent=self):return
         chrome=self.current();self.app.user_themes[name]=copy.deepcopy(chrome);save_user_themes(self.app.user_themes);self.app.theme_library[name]=copy.deepcopy(chrome);self.app.refresh_theme_choices();self.app.theme_name.set(name);self.app.apply_theme(name,save=True);self.base.set(name);self.original_name=name;self.original_chrome=copy.deepcopy(chrome);self.session_original_name=name;self.session_original_chrome=copy.deepcopy(chrome);self._saved=True
         messagebox.showinfo(APP,self.app.t("theme_saved","Saved local theme: {name}").format(name=name),parent=self)
+
+    def export_current(self):
+        name=(self.base.get() or self.original_name or DEFAULT_THEME_NAME).strip()
+        initial=re.sub(r"[^A-Za-z0-9._-]+","_",name).strip("_") or "OmN-e_Theme"
+        path=filedialog.asksaveasfilename(parent=self,title=self.app.t("theme_export_title","Export OmN-e Theme"),defaultextension=".omne-theme.json",initialfile=initial+".omne-theme.json",filetypes=[("OmN-e Theme","*.omne-theme.json"),("JSON","*.json")])
+        if not path:return
+        chrome=self.current(); appearance="light" if relative_luminance(str(chrome["background"]))>=0.45 else "dark"
+        target=Path(path)
+        if target.exists() and not messagebox.askyesno(APP,self.app.t("theme_export_overwrite","Replace the existing theme file?"),parent=self):return
+        try:export_native_theme(target,name,appearance,chrome,overwrite=True)
+        except Exception as exc:messagebox.showerror(APP,self.app.t("theme_export_failed","Theme export failed: {error}").format(error=exc),parent=self);return
+        messagebox.showinfo(APP,self.app.t("theme_exported","Exported theme to {path}").format(path=target),parent=self)
 
     def revert(self):self.load_base()
     def close(self):
@@ -1740,7 +1903,7 @@ def install_source_package(archive, destination, backup_root, expected_version):
             if len(paths)!=len(set(paths)):raise RuntimeError(tr('Duplicate archive paths'))
             z.extractall(work)
         scripts=list(work.rglob("omne_footage_lab.py"))
-        if len(scripts)!=1:raise RuntimeError(tr('Archive must contain exactly one Footage Lab application'))
+        if len(scripts)!=1:raise RuntimeError(tr('Archive must contain exactly one Retrospector application'))
         release=scripts[0].parent
         manifest_path=release/"release_files.json"
         if not manifest_path.exists():raise RuntimeError(tr('Update is missing release_files.json'))
@@ -1843,12 +2006,12 @@ class App(tk.Tk):
         self.user_themes=load_user_themes()
         for _name,_chrome in self.user_themes.items():self.theme_library[_name]=copy.deepcopy(_chrome)
         self.available_themes=list(dict.fromkeys(self.published_themes+list(self.user_themes)))
-        self.default_theme=self.ui_profile.get("default_theme") if self.ui_profile.get("default_theme") in self.published_themes else (self.published_themes[0] if self.published_themes else "Pungent Purple")
+        self.default_theme=self.ui_profile.get("default_theme") if self.ui_profile.get("default_theme") in self.published_themes else (DEFAULT_THEME_NAME if DEFAULT_THEME_NAME in self.published_themes else (self.published_themes[0] if self.published_themes else DEFAULT_THEME_NAME))
         self.initial_theme_name=self.default_theme
         try:
             if self.preferences_path.exists():
                 _pref=json.loads(self.preferences_path.read_text(encoding="utf-8")); _candidate=_pref.get("theme_name")
-                if _candidate in self.available_themes:self.initial_theme_name=_candidate
+                self.initial_theme_name=resolve_theme_preference(_candidate,self.user_themes,self.published_themes)
         except Exception:pass
         self.ui_chrome=copy.deepcopy(self.theme_library.get(self.initial_theme_name,self.ui_profile.get("chrome",DEFAULT_CHROME)))
         self.ui_profile["chrome"]=self.ui_chrome
@@ -1901,7 +2064,7 @@ class App(tk.Tk):
         self.show_startup=tk.BooleanVar(value=DEFAULT_UI["show_startup"])
         self.check_updates_var=tk.BooleanVar(value=DEFAULT_UI["check_updates"])
         self.tooltips_enabled_var=tk.BooleanVar(value=DEFAULT_UI["enable_tooltips"])
-        self.theme_name=tk.StringVar(value=getattr(self,"initial_theme_name",getattr(self,"default_theme","Pungent Purple")))
+        self.theme_name=tk.StringVar(value=getattr(self,"initial_theme_name",getattr(self,"default_theme",DEFAULT_THEME_NAME)))
         self.update_status=tk.StringVar(value=tr('v{v0} · update check pending', v0=VERSION))
 
     def t(self,key,default):
@@ -2024,7 +2187,15 @@ class App(tk.Tk):
         self.after_idle(lambda:self._layout_preview_controls(pc.winfo_width()))
 
         preview_body=ttk.Frame(right);preview_body.pack(fill="both",expand=True)
-        self.image=self.add_tip(FitPreview(preview_body,c),"preview_visual");self.image.pack(fill="both",expand=True);self.image.configure(text=self.t("preview_empty","Render a short test clip"))
+        preview_viewbar=ttk.Frame(preview_body);preview_viewbar.pack(fill="x",pady=(0,4))
+        self.preview_view_status=tk.StringVar(value="Fit")
+        self.image=self.add_tip(FitPreview(preview_body,c,on_view_change=self.preview_view_status.set),"preview_visual")
+        self.add_tip(ttk.Button(preview_viewbar,text=self.t("preview_fit","Fit"),command=self.image.fit),"preview_fit").pack(side="left")
+        self.add_tip(ttk.Button(preview_viewbar,text=self.t("preview_actual","100%"),command=self.image.actual),"preview_actual").pack(side="left",padx=(4,0))
+        self.add_tip(ttk.Button(preview_viewbar,text=self.t("preview_zoom_out","−"),width=3,command=self.image.zoom_out),"preview_zoom_out").pack(side="left",padx=(8,0))
+        self.add_tip(ttk.Button(preview_viewbar,text=self.t("preview_zoom_in","+"),width=3,command=self.image.zoom_in),"preview_zoom_in").pack(side="left",padx=(2,0))
+        ttk.Label(preview_viewbar,textvariable=self.preview_view_status,style="Muted.TLabel").pack(side="left",padx=8)
+        self.image.pack(fill="both",expand=True);self.image.configure(text=self.t("preview_empty","Render a short test clip"))
         self.add_tip(ttk.Progressbar(preview_body,variable=self.pprog,maximum=1),"preview_progress").pack(fill="x",pady=(4,0))
         self.preview_status_label=self.add_tip(ttk.Label(preview_body,textvariable=self.pstatus,style="Muted.TLabel",justify="left"),"preview_status");self.preview_status_label.pack(fill="x",pady=(3,0));bind_wrap(self.preview_status_label)
 
@@ -2269,6 +2440,16 @@ class App(tk.Tk):
     def open_user_theme_studio(self):
         UserThemeStudio(self)
 
+    def open_theme_import(self):
+        path=filedialog.askopenfilename(parent=self,title=self.t("theme_import_title","Import Theme"),filetypes=[
+            ("Supported themes","*.omne-theme.json *.json *.jsonc *.yaml *.yml *.tmTheme *.gpl"),
+            ("OmN-e themes","*.omne-theme.json"),("VS Code / JSON","*.json *.jsonc"),("Base16 / Base24","*.yaml *.yml"),("TextMate","*.tmTheme"),("GIMP palette","*.gpl"),("All files","*")])
+        if not path:return
+        try:imported=import_theme_file(path)
+        except ThemeImportError as exc:messagebox.showerror(APP,self.t("theme_import_failed","Theme import rejected: {error}").format(error=exc),parent=self);return
+        except Exception as exc:messagebox.showerror(APP,self.t("theme_import_failed","Theme import failed: {error}").format(error=exc),parent=self);return
+        ThemeImportDialog(self,imported,path)
+
     def show_startup_panel(self,force=False):
         if self.startup_window and self.startup_window.winfo_exists():
             self.startup_window.deiconify(); self.startup_window.lift(); return
@@ -2303,7 +2484,8 @@ class App(tk.Tk):
         self.add_tip(ttk.Label(theme_row,text=self.t("theme","Theme")),"theme").grid(row=0,column=0,sticky="w")
         theme_combo=self.add_tip(ttk.Combobox(theme_row,textvariable=self.theme_name,values=self.available_themes,state="readonly",width=24),"theme"); theme_combo.grid(row=0,column=1,sticky="w",padx=8); self.theme_combo=theme_combo
         theme_combo.bind("<<ComboboxSelected>>",lambda _e:self.apply_theme(self.theme_name.get(),save=True))
-        self.add_tip(ttk.Button(theme_row,text=self.t("customize_theme","Customize…"),command=self.open_user_theme_studio),"customize_theme").grid(row=0,column=2,sticky="w",padx=(0,8))
+        self.add_tip(ttk.Button(theme_row,text=self.t("customize_theme","Customize…"),command=self.open_user_theme_studio),"customize_theme").grid(row=0,column=2,sticky="w",padx=(0,4))
+        self.add_tip(ttk.Button(theme_row,text=self.t("import_theme","Import…"),command=self.open_theme_import),"import_theme").grid(row=0,column=3,sticky="w",padx=(0,8))
         self.add_tip(ttk.Label(theme_row,text=self.t("theme_help","Choose a published or locally saved interface theme."),style="Muted.TLabel",wraplength=280,justify="left"),"theme").grid(row=0,column=4,sticky="w")
 
         toggles=ttk.Frame(body); toggles.grid(row=3,column=0,sticky="ew",pady=(2,0))
@@ -2366,7 +2548,7 @@ class App(tk.Tk):
         kind=str(asset.get("kind") or "zip-source")
         if not re.fullmatch(r"[0-9a-f]{64}",expected) or not trusted_download_url(url):
             messagebox.showerror(APP,tr('The update package URL or SHA-256 checksum is invalid.'),parent=self);return
-        if not messagebox.askyesno(APP,tr('Install Footage Lab v{v0} from omne.space?\n\nUser settings and media are kept. The current application will be backed up.', v0=info.get('version')),parent=self):return
+        if not messagebox.askyesno(APP,tr('Install Retrospector v{v0} from omne.space?\n\nUser settings and media are kept. The current application will be backed up.', v0=info.get('version')),parent=self):return
         self.update_install_running=True;self.update_status.set(tr('Downloading v{v0}…', v0=info.get('version')));self.refresh_update_panel()
         def work():
             try:
@@ -2387,11 +2569,9 @@ class App(tk.Tk):
                 if h.hexdigest()!=expected:
                     part.unlink(missing_ok=True);raise RuntimeError(tr('Update checksum mismatch; installation was not attempted'))
                 os.replace(part,target)
-                if kind in {"installer","exe","msi"}:
-                    if os.name!="nt":raise RuntimeError(tr('This installer is not for the current platform'))
-                    self.ev.put(dict(update_installer_ready=str(target),kind=kind));return
-                if kind in {"pkg","dmg"}:
-                    if sys.platform!="darwin":raise RuntimeError(tr('This installer is not for the current platform'))
+                if kind in {"installer","exe","msi","pkg","dmg","deb"}:
+                    if not native_installer_kind_supported(kind,platform.system()):
+                        raise RuntimeError(tr('This installer is not for the current platform'))
                     self.ev.put(dict(update_installer_ready=str(target),kind=kind));return
                 if kind!="zip-source" or getattr(sys,"frozen",False):raise RuntimeError(tr('This build requires a compatible installer asset'))
                 backup=install_source_package(target,app_base_dir(),updates,str(info["version"]))
@@ -2409,7 +2589,7 @@ class App(tk.Tk):
     def browse_src(self):
         x=filedialog.askdirectory(initialdir=self.src.get() or str(Path.home()))
         if x:
-            self.src.set(x); self.out.set(x+"_OMNE_FOOTAGE_LAB"); self.scan(); self.save_preferences(silent=True)
+            self.src.set(x); self.out.set(x+"_OMNE_RETROSPECTOR"); self.scan(); self.save_preferences(silent=True)
     def browse_out(self):
         x=filedialog.askdirectory(initialdir=self.out.get() or str(Path.home()))
         if x:
@@ -2542,7 +2722,7 @@ class App(tk.Tk):
             if self.preferences_path.exists():
                 data=json.loads(self.preferences_path.read_text(encoding="utf-8"))
         except Exception as e:self.logger.write(f"Preferences load failed: {e}")
-        values={**DEFAULT_UI,**(data if isinstance(data,dict) else {})}
+        values={**DEFAULT_UI,**normalize_loaded_preferences(data,self.user_themes,self.published_themes)}
         mapping={
             "source":self.src,"output":self.out,"max_mib":self.maxm,"mode":self.mode,"preset":self.preset,"resolution":self.res,"fps":self.fps,
             "crf":self.crf,"bitrate":self.bitrate,"x264":self.x264,"generation":self.generation,"scan":self.scanv,"interp":self.interp,
@@ -2609,7 +2789,7 @@ class App(tk.Tk):
     def settings(self):
         output=self.out.get().strip()
         if not output:
-            output=self.src.get().rstrip("/")+"_OMNE_FOOTAGE_LAB"; self.out.set(output)
+            output=self.src.get().rstrip("/")+"_OMNE_RETROSPECTOR"; self.out.set(output)
         return dict(output=output,max_mib=float(self.maxm.get()),resolution=self.res.get(),fps=float(self.fps.get()),
                     crf=int(self.crf.get()),bitrate=float(self.bitrate.get()),x264=self.x264.get(),generation=int(self.generation.get()),
                     scan=float(self.scanv.get()),interp=bool(self.interp.get()),interp_fps=float(self.interpfps.get()),
@@ -2712,13 +2892,13 @@ class App(tk.Tk):
                     self.refresh_update_panel()
                     try:open_path(path)
                     except Exception as ex:messagebox.showerror(APP,tr('Could not launch update installer:\n{v0}', v0=ex),parent=self)
-                    else:messagebox.showinfo(APP,tr('The verified update installer has been launched. Close Footage Lab when the installer asks you to.'),parent=self)
+                    else:messagebox.showinfo(APP,tr('The verified update installer has been launched. Close Retrospector when the installer asks you to.'),parent=self)
                     continue
                 if e.get("update_installed"):
                     self.update_install_running=False
                     self.update_status.set(tr('v{v0} installed · restart required', v0=e.get('version')))
                     self.refresh_update_panel()
-                    if messagebox.askyesno(APP,tr('Update installed successfully. Restart Footage Lab now?'),parent=self):self.restart_app()
+                    if messagebox.askyesno(APP,tr('Update installed successfully. Restart Retrospector now?'),parent=self):self.restart_app()
                     continue
                 if "update_install_error" in e:
                     self.update_install_running=False
@@ -2775,7 +2955,7 @@ class App(tk.Tk):
         if self.running:self.cancels[self.running].set(); self.proc.cancel()
 
     def openout(self):
-        p=Path(self.out.get() or (self.src.get().rstrip("/")+"_OMNE_FOOTAGE_LAB")); p.mkdir(parents=True,exist_ok=True); open_path(p)
+        p=Path(self.out.get() or (self.src.get().rstrip("/")+"_OMNE_RETROSPECTOR")); p.mkdir(parents=True,exist_ok=True); open_path(p)
 
     def preview_proxy_settings(self,src):
         s=self.settings(); info=self.preview_proc.probe(src)

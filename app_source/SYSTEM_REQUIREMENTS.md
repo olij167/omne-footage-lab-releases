@@ -1,6 +1,6 @@
-# OmN-e Footage Lab — System Requirements
+# OmN-e Retrospector — System Requirements
 
-OmN-e Footage Lab is intentionally CPU-first. A discrete graphics card is not
+OmN-e Retrospector is intentionally CPU-first. A discrete graphics card is not
 required and GPU acceleration is not used by the default processing pipeline.
 
 ## Minimum practical baseline
@@ -39,7 +39,7 @@ with the operation:
 - Preview mode deliberately uses a smaller proxy/fewer frames so the editor
   remains practical on integrated-graphics laptops and older processors.
 
-Footage Lab processes one batch job at a time by design, avoiding multiple FFmpeg
+Retrospector processes one batch job at a time by design, avoiding multiple FFmpeg
 encodes competing for CPU, RAM and disk bandwidth.
 
 ## Platform targets

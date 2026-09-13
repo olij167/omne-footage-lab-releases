@@ -36,7 +36,7 @@ if [[ -z "$(git config user.email || true)" ]]; then git config user.email "$GH_
 
 git add .
 if ! git diff --cached --quiet; then
-  git commit -m "OmN-e Footage Lab native build pipeline v$VERSION"
+  git commit -m "OmN-e Retrospector native build pipeline v$VERSION"
 fi
 
 if gh repo view "$REPO" >/dev/null 2>&1; then

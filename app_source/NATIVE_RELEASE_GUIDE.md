@@ -1,4 +1,4 @@
-# OmN-e Footage Lab — Windows + macOS release guide
+# OmN-e Retrospector — Linux + Windows + macOS release guide
 
 The desktop runtime is shared Python/Tk + FFmpeg code, but native packages must be built on their target operating system. PyInstaller is not a cross-compiler.
 
@@ -20,7 +20,7 @@ After a GitHub Release is ready, the owner machine syncs its metadata:
 ```bash
 python3 ~/.local/share/omne-footage-lab-owner/owner/sync_native_release.py \
   --repo OWNER/REPOSITORY \
-  --version 0.3.2 \
+  --version 0.4.0 \
   --web ~/.local/share/omne-footage-lab-owner/web
 ```
 

@@ -7,7 +7,7 @@ $Version = (& $Python -c 'import ast,pathlib; t=ast.parse(pathlib.Path("omne_foo
 $Arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
 if ($Arch -notin @("X64", "Arm64")) { throw "Unsupported Windows build architecture: $Arch" }
 $ArchLabel = if ($Arch -eq "Arm64") { "arm64" } else { "x64" }
-$AppName = "OmN-e Footage Lab"
+$AppName = "OmN-e Retrospector"
 
 $Ffmpeg = (Get-Command ffmpeg.exe -ErrorAction Stop).Source
 $Ffprobe = (Get-Command ffprobe.exe -ErrorAction Stop).Source
@@ -30,7 +30,7 @@ foreach ($f in @("README.txt","QA_REPORT.txt","RELEASE_GUIDE.md","SYSTEM_REQUIRE
   if (Test-Path $f) { Copy-Item $f $Dist -Force }
 }
 
-$Zip = Join-Path $Root "OmN-e_Footage_Lab_v${Version}_Windows_${ArchLabel}_Portable.zip"
+$Zip = Join-Path $Root "OmN-e_Retrospector_v${Version}_Windows_${ArchLabel}_Portable.zip"
 Compress-Archive -Path "$Dist\*" -DestinationPath $Zip -CompressionLevel Optimal -Force
 (Get-FileHash -Algorithm SHA256 $Zip).Hash.ToLower() + "  " + (Split-Path -Leaf $Zip) | Set-Content -Encoding ascii "${Zip}.sha256"
 Write-Host "Windows portable ZIP: $Zip"
@@ -54,7 +54,7 @@ if (-not $Iscc) {
 & $Iscc "/DMyAppVersion=$Version" "/DMyAppArch=$ArchLabel" .\windows_installer.iss
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
 
-$Setup = Join-Path $Root "dist-installer\OmN-e_Footage_Lab_v${Version}_Windows_${ArchLabel}_Setup.exe"
+$Setup = Join-Path $Root "dist-installer\OmN-e_Retrospector_v${Version}_Windows_${ArchLabel}_Setup.exe"
 if (-not (Test-Path $Setup)) { throw "Installer output missing: $Setup" }
 
 # Optional Authenticode signing. The certificate should already be available

@@ -1,7 +1,7 @@
-OmN-e Footage Lab — Third-party component notice
+OmN-e Retrospector — Third-party component notice
 ================================================
 
-OmN-e Footage Lab desktop packages may bundle FFmpeg and FFprobe so the user
+OmN-e Retrospector desktop packages may bundle FFmpeg and FFprobe so the user
 does not need to install them separately. FFmpeg is a separate open-source
 project and is distributed under its own licence terms. The exact licence can
 depend on how the supplied FFmpeg binary was built.

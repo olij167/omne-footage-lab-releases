@@ -30,14 +30,17 @@ for name in names:
     dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(src,dest)
     dest.chmod(0o755 if dest.suffix in {'.py','.sh'} else 0o644)
 bins=Path.home()/'.local/bin';bins.mkdir(parents=True,exist_ok=True)
-launcher=bins/'omne-footage-lab'
+launcher=bins/'omne-retrospector';compat_launcher=bins/'omne-footage-lab'
 import shlex
 launcher.write_text('#!/usr/bin/env bash\nexec python3 '+shlex.quote(str(target/'omne_footage_lab.py'))+' "$@"\n');launcher.chmod(0o755)
+compat_launcher.write_text('#!/usr/bin/env bash\nexec '+shlex.quote(str(launcher))+' "$@"\n');compat_launcher.chmod(0o755)
 profile=json.loads((target/'ui_profile.json').read_text(encoding='utf-8'))
-name=str(profile.get('identity',{}).get('app_name','OmN-e Footage Lab')).replace('\n',' ').replace('\r',' ')
-desktop=Path.home()/'.local/share/applications/omne-footage-lab.desktop';desktop.parent.mkdir(parents=True,exist_ok=True)
+name=str(profile.get('identity',{}).get('app_name','OmN-e Retrospector')).replace('\n',' ').replace('\r',' ')
+desktop=Path.home()/'.local/share/applications/omne-retrospector.desktop';desktop.parent.mkdir(parents=True,exist_ok=True)
+legacy_desktop=Path.home()/'.local/share/applications/omne-footage-lab.desktop'
 quoted='"'+str(launcher).replace('\\','\\\\').replace('"','\\"').replace('%','%%')+'"'
 desktop.write_text('[Desktop Entry]\nType=Application\nName='+name+'\nComment=Clip footage and render glitch-art recipes\nExec='+quoted+'\nIcon=video-x-generic\nTerminal=false\nCategories=AudioVideo;Utility;\nStartupNotify=true\n')
+legacy_desktop.unlink(missing_ok=True)
 print('Installed public application:',launcher)
 print('User folders, presets, logs and media were not removed.')
 try:

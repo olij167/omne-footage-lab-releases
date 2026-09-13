@@ -1,4 +1,4 @@
-name: Build native Footage Lab release
+name: Build native OmN-e Retrospector release
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
       version:
         description: "Release version; must match app_source/omne_footage_lab.py"
         required: true
-        default: "0.3.2"
+        default: "0.4.0"
       publish_release:
         description: "Create immutable public GitHub Release after all native builds pass"
         required: true
@@ -46,6 +46,37 @@ jobs:
             exit 2
           }
           echo "version=$SOURCE_VERSION" >> "$GITHUB_OUTPUT"
+      - name: Run Retrospector runtime/theme contract tests
+        shell: bash
+        run: python -m unittest discover -s tests -v
+
+  linux-x64:
+    needs: validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app_source
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Install Linux build dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg python3-tk
+      - name: Build Linux x64 package
+        shell: bash
+        run: ./build_linux.sh
+      - name: Upload Linux build
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-linux-x64
+          if-no-files-found: error
+          path: |
+            app_source/dist-linux/OmN-e_Retrospector_v${{ needs.validate.outputs.version }}_Linux_x64.deb
+            app_source/dist-linux/OmN-e_Retrospector_v${{ needs.validate.outputs.version }}_Linux_x64.deb.sha256
 
   windows-x64:
     needs: validate
@@ -86,10 +117,10 @@ jobs:
           name: native-windows-x64
           if-no-files-found: error
           path: |
-            app_source/dist-installer/OmN-e_Footage_Lab_v${{ needs.validate.outputs.version }}_Windows_x64_Setup.exe
-            app_source/dist-installer/OmN-e_Footage_Lab_v${{ needs.validate.outputs.version }}_Windows_x64_Setup.exe.sha256
-            app_source/OmN-e_Footage_Lab_v${{ needs.validate.outputs.version }}_Windows_x64_Portable.zip
-            app_source/OmN-e_Footage_Lab_v${{ needs.validate.outputs.version }}_Windows_x64_Portable.zip.sha256
+            app_source/dist-installer/OmN-e_Retrospector_v${{ needs.validate.outputs.version }}_Windows_x64_Setup.exe
+            app_source/dist-installer/OmN-e_Retrospector_v${{ needs.validate.outputs.version }}_Windows_x64_Setup.exe.sha256
+            app_source/OmN-e_Retrospector_v${{ needs.validate.outputs.version }}_Windows_x64_Portable.zip
+            app_source/OmN-e_Retrospector_v${{ needs.validate.outputs.version }}_Windows_x64_Portable.zip.sha256
 
   macos:
     needs: validate
@@ -147,14 +178,14 @@ jobs:
           name: native-macos-${{ matrix.arch }}
           if-no-files-found: error
           path: |
-            app_source/dist-macos/OmN-e_Footage_Lab_v${{ needs.validate.outputs.version }}_macOS_${{ matrix.arch }}.pkg
-            app_source/dist-macos/OmN-e_Footage_Lab_v${{ needs.validate.outputs.version }}_macOS_${{ matrix.arch }}.pkg.sha256
-            app_source/dist-macos/OmN-e_Footage_Lab_v${{ needs.validate.outputs.version }}_macOS_${{ matrix.arch }}.dmg
-            app_source/dist-macos/OmN-e_Footage_Lab_v${{ needs.validate.outputs.version }}_macOS_${{ matrix.arch }}.dmg.sha256
+            app_source/dist-macos/OmN-e_Retrospector_v${{ needs.validate.outputs.version }}_macOS_${{ matrix.arch }}.pkg
+            app_source/dist-macos/OmN-e_Retrospector_v${{ needs.validate.outputs.version }}_macOS_${{ matrix.arch }}.pkg.sha256
+            app_source/dist-macos/OmN-e_Retrospector_v${{ needs.validate.outputs.version }}_macOS_${{ matrix.arch }}.dmg
+            app_source/dist-macos/OmN-e_Retrospector_v${{ needs.validate.outputs.version }}_macOS_${{ matrix.arch }}.dmg.sha256
 
   github-release:
     if: ${{ inputs.publish_release }}
-    needs: [validate, windows-x64, macos]
+    needs: [validate, linux-x64, windows-x64, macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v7
@@ -189,8 +220,8 @@ jobs:
             CHECK_COUNT=$((CHECK_COUNT + 1))
           done < <(find release-assets -type f -name '*.sha256' -print0)
 
-          [[ "$CHECK_COUNT" -eq 6 ]] || {
-            echo "Expected 6 checksum companions, found $CHECK_COUNT" >&2
+          [[ "$CHECK_COUNT" -eq 7 ]] || {
+            echo "Expected 7 checksum companions, found $CHECK_COUNT" >&2
             exit 2
           }
 
@@ -215,7 +246,7 @@ jobs:
           elif [[ "$EXISTING" == "true" ]]; then
             echo "Resuming existing draft GitHub Release v$VERSION."
           else
-            gh release create "v$VERSION"               --repo "$GITHUB_REPOSITORY"               --draft               --target "$GITHUB_SHA"               --title "OmN-e Footage Lab v$VERSION — native desktop builds"               --notes "Native Windows and macOS builds for OmN-e Footage Lab v$VERSION. The canonical download page and update authority remain on https://omne.space/downloads/footage-lab/."
+            gh release create "v$VERSION"               --repo "$GITHUB_REPOSITORY"               --draft               --target "$GITHUB_SHA"               --title "OmN-e Retrospector v$VERSION — native desktop builds"               --notes "Native Linux, Windows and macOS builds for OmN-e Retrospector v$VERSION. The canonical download page and update authority remain on https://omne.space/downloads/footage-lab/."
           fi
 
       - name: Upload only files to draft release
@@ -227,8 +258,8 @@ jobs:
           set -euo pipefail
 
           mapfile -d '' RELEASE_FILES < <(find release-assets -type f -print0)
-          [[ "${#RELEASE_FILES[@]}" -eq 12 ]] || {
-            echo "Expected 12 release files, found ${#RELEASE_FILES[@]}" >&2
+          [[ "${#RELEASE_FILES[@]}" -eq 14 ]] || {
+            echo "Expected 14 release files, found ${#RELEASE_FILES[@]}" >&2
             printf '  %s\n' "${RELEASE_FILES[@]}" >&2
             exit 2
           }
@@ -238,8 +269,8 @@ jobs:
           ACTUAL_COUNT="$(
             gh release view "v$VERSION"               --repo "$GITHUB_REPOSITORY"               --json assets               --jq '.assets | length'
           )"
-          [[ "$ACTUAL_COUNT" -eq 12 ]] || {
-            echo "Release asset verification failed: expected 12, found $ACTUAL_COUNT" >&2
+          [[ "$ACTUAL_COUNT" -eq 14 ]] || {
+            echo "Release asset verification failed: expected 14, found $ACTUAL_COUNT" >&2
             exit 2
           }
 
@@ -251,4 +282,4 @@ jobs:
         run: |
           set -euo pipefail
           gh release edit "v$VERSION"             --repo "$GITHUB_REPOSITORY"             --draft=false
-          echo "Published immutable native release v$VERSION with 12 verified assets."
+          echo "Published immutable native release v$VERSION with 14 verified assets."

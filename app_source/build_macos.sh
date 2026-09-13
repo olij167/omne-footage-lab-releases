@@ -29,7 +29,7 @@ case "$MACHINE" in
   *) echo "Unsupported macOS architecture: $MACHINE" >&2; exit 2 ;;
 esac
 
-APP_NAME="OmN-e Footage Lab"
+APP_NAME="OmN-e Retrospector"
 BUNDLE_ID="${OMNE_MACOS_BUNDLE_ID:-space.omne.footagelab}"
 APP_IDENTITY="${OMNE_MACOS_APPLICATION_IDENTITY:-}"
 INSTALLER_IDENTITY="${OMNE_MACOS_INSTALLER_IDENTITY:-}"
@@ -69,8 +69,8 @@ for f in README.txt QA_REPORT.txt RELEASE_GUIDE.md SYSTEM_REQUIREMENTS.md THIRD_
   [[ ! -f "$f" ]] || cp -p "$f" "$DOCS_DIR/$f"
 done
 
-PKG_UNSIGNED="$ROOT/dist-macos/OmN-e_Footage_Lab_v${VERSION}_macOS_${ARCH_LABEL}_unsigned.pkg"
-PKG_FINAL="$ROOT/dist-macos/OmN-e_Footage_Lab_v${VERSION}_macOS_${ARCH_LABEL}.pkg"
+PKG_UNSIGNED="$ROOT/dist-macos/OmN-e_Retrospector_v${VERSION}_macOS_${ARCH_LABEL}_unsigned.pkg"
+PKG_FINAL="$ROOT/dist-macos/OmN-e_Retrospector_v${VERSION}_macOS_${ARCH_LABEL}.pkg"
 
 pkgbuild \
   --component "$APP_PATH" \
@@ -90,7 +90,7 @@ mkdir -p "$DMG_STAGE"
 cp -R "$APP_PATH" "$DMG_STAGE/"
 cp -R "$DOCS_DIR" "$DMG_STAGE/"
 ln -s /Applications "$DMG_STAGE/Applications"
-DMG_FINAL="$ROOT/dist-macos/OmN-e_Footage_Lab_v${VERSION}_macOS_${ARCH_LABEL}.dmg"
+DMG_FINAL="$ROOT/dist-macos/OmN-e_Retrospector_v${VERSION}_macOS_${ARCH_LABEL}.dmg"
 hdiutil create -volname "$APP_NAME $VERSION" -srcfolder "$DMG_STAGE" -ov -format UDZO "$DMG_FINAL" >/dev/null
 rm -rf "$DMG_STAGE"
 
@@ -118,11 +118,7 @@ if [[ -n "${OMNE_APPLE_ID:-}" && -n "${OMNE_APPLE_TEAM_ID:-}" && -n "${OMNE_APPL
 fi
 
 for artifact in "$PKG_FINAL" "$DMG_FINAL"; do
-  (
-    cd "$(dirname "$artifact")"
-    NAME="$(basename "$artifact")"
-    shasum -a 256 "$NAME" > "${NAME}.sha256"
-  )
+  shasum -a 256 "$artifact" > "${artifact}.sha256"
 done
 
 # Smoke-test bundle metadata and code signature. Ad-hoc signing is acceptable for

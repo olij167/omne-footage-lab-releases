@@ -1,6 +1,6 @@
-# OmN-e Footage Lab — Native Build Repository Kit 0.3.2
+# OmN-e Retrospector — Native Build Repository Kit 0.4.0
 
-This repository builds the same Footage Lab source natively on Windows and
+This repository builds the same Retrospector source natively on Windows and
 macOS. PyInstaller is not a cross-compiler.
 
 ## One-time bootstrap from the installed owner workspace
@@ -16,7 +16,7 @@ the current kit to the existing repository if it already exists.
 Then:
 
 ```bash
-gh workflow run native-release.yml   -R olij167/omne-footage-lab-releases   -f version=0.3.2   -f publish_release=true
+gh workflow run native-release.yml   -R olij167/omne-footage-lab-releases   -f version=0.4.0   -f publish_release=true
 
 gh run watch -R olij167/omne-footage-lab-releases
 ```
@@ -37,3 +37,7 @@ remain in immutable GitHub Releases while the trusted omne.space update Worker
 proxies only the allow-listed release assets.
 
 See `app_source/SYSTEM_REQUIREMENTS.md` for the CPU/RAM/GPU baseline.
+
+## Native install targets
+
+The release workflow now builds a Linux x64 `.deb` alongside Windows x64 and macOS arm64/x64 packages. The `.deb` is the primary Ubuntu/Zorin install path: download it and open it in the desktop Software installer. The existing `/downloads/footage-lab/*` authority and source ZIP remain compatibility/update infrastructure.
