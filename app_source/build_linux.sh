@@ -42,6 +42,7 @@ rm -rf build dist dist-linux
 mkdir -p dist-linux
 
 "$BUILD_PYTHON" -m PyInstaller --noconfirm --clean --windowed \
+  --hidden-import=PIL._tkinter_finder \
   --name "$APP_NAME" \
   --add-binary "$(command -v ffmpeg):tools" \
   --add-binary "$(command -v ffprobe):tools" \

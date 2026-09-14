@@ -58,5 +58,40 @@ class PackagingContractTests(unittest.TestCase):
         self.assertIn('python -m unittest discover -s tests -v', workflow)
 
 
+    def test_linux_build_bundles_pillow_tk_bridge(self):
+        text = self.read('app_source/build_linux.sh')
+        self.assertIn(
+            '--hidden-import=PIL._tkinter_finder',
+            text,
+            'Linux frozen preview/colour picker must include Pillow Tk bridge',
+        )
+
+    def test_windows_and_macos_builds_bundle_pillow_tk_bridge(self):
+        for path in (
+            'app_source/build_windows.ps1',
+            'app_source/build_macos.sh',
+        ):
+            with self.subTest(path=path):
+                self.assertIn(
+                    '--hidden-import=PIL._tkinter_finder',
+                    self.read(path),
+                    f'{path} must include Pillow Tk bridge for ImageTk',
+                )
+
+    def test_public_theme_studio_keeps_advanced_colour_picker_wiring(self):
+        source = self.read('app_source/omne_footage_lab.py')
+        start = source.index('class UserThemeStudio')
+        end = source.find('\nclass ', start + 1)
+        if end < 0:
+            end = len(source)
+        studio = source[start:end]
+        self.assertIn(
+            'AdvancedColorPicker.choose',
+            studio,
+            'Public Theme Studio must route semantic colour editing to '
+            'the advanced wheel/HSV/RGB/HEX/eyedropper picker',
+        )
+
+
 if __name__ == '__main__':
     unittest.main()

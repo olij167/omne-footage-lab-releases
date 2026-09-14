@@ -43,6 +43,7 @@ mkdir -p dist-macos
 
 PYI_ARGS=(
   --noconfirm --clean --windowed
+  --hidden-import=PIL._tkinter_finder
   --name "$APP_NAME"
   --osx-bundle-identifier "$BUNDLE_ID"
   --add-binary "$(command -v ffmpeg):tools"

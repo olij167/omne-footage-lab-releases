@@ -19,6 +19,7 @@ if ($LASTEXITCODE -ne 0) { throw "Build dependencies failed" }
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue build, dist, dist-installer
 
 & $Python -m PyInstaller --noconfirm --clean --windowed --name $AppName `
+  --hidden-import=PIL._tkinter_finder `
   --add-binary "$Ffmpeg;tools" --add-binary "$Ffprobe;tools" `
   --add-data ".\ui_profile.json;." .\omne_footage_lab.py
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed" }
